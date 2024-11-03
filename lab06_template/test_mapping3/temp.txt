@@ -1,0 +1,16 @@
+Current PID: 0. Memory instantiation complete. OFF bits: 5. PFN bits: 6. VPN bits: 6
+Current PID: 0. Switched execution context to process: 0
+Current PID: 0. Mapped virtual page number 1 to physical frame number 1
+Current PID: 0. Error: Unknown instruction 'load'
+Current PID: 0. Error: Unknown instruction 'store'
+Current PID: 1. Switched execution context to process: 1
+Current PID: 1. Mapped virtual page number 1 to physical frame number 3
+Current PID: 1. Error: Unknown instruction 'load'
+Current PID: 1. Error: Unknown instruction 'store'
+Current PID: 0. Switched execution context to process: 0
+Current PID: 0. Error: Unknown instruction 'load'
+Current PID: 1. Switched execution context to process: 1
+Current PID: 1. Error: Unknown instruction 'load'
+Current PID: 2. Switched execution context to process: 2
+Current PID: 2. Mapped virtual page number 2 to physical frame number 0
+Current PID: 2. Error: Unknown instruction 'load'
