@@ -55,6 +55,8 @@ int r2[4] = {0};
 int OFF_BITS_defined = 4;
 int VPN_BITS_defined = 6;
 
+int timestamp = 0;
+
 // Function to tokenize input
 char **tokenize_input(char *input)
 {
@@ -239,6 +241,7 @@ int main(int argc, char *argv[])
             for (int i = 0; i < 8; i++)
             {
                 tlb[i].valid = FALSE;
+                tlb[i].pfn = 0;
             }
             tlb_next_replace_index = 0; // Reset TLB replacement index
 
@@ -253,7 +256,7 @@ int main(int argc, char *argv[])
 
             define_called = TRUE;
             fprintf(output_file, "Current PID: %d. Memory instantiation complete. OFF bits: %d. PFN bits: %d. VPN bits: %d\n",
-                    current_pid, OFF, PFN, VPN_BITS_defined);
+                current_pid, OFF_BITS_defined, PFN, VPN_BITS_defined);
         }
 
         else
@@ -370,6 +373,8 @@ int main(int argc, char *argv[])
 
                     // Update page table
                     page_tables[current_pid][VPN].valid = FALSE;
+                    page_tables[current_pid][VPN].pfn = 0;
+
 
                     // Update TLB
                     for (int i = 0; i < 8; i++)
@@ -377,6 +382,7 @@ int main(int argc, char *argv[])
                         if (tlb[i].valid && tlb[i].pid == current_pid && tlb[i].vpn == VPN)
                         {
                             tlb[i].valid = FALSE;
+                            tlb[i].pfn = 0;
                             break;
                         }
                     }
@@ -471,7 +477,7 @@ int main(int argc, char *argv[])
                     }
                 }
             }
-                        else if (strcmp(tokens[0], "store") == 0)
+            else if (strcmp(tokens[0], "store") == 0)
             {
                 if (tokens[1] == NULL || tokens[2] == NULL)
                 {
@@ -566,7 +572,7 @@ int main(int argc, char *argv[])
                         {
                             // Calculate physical address using global OFF_BITS_defined
                             int physical_address = (PFN << OFF_BITS_defined) | (address & ((1 << OFF_BITS_defined) - 1));
-                            if (physical_address < (1 << (OFF_BITS_defined + VPN_BITS_defined)))
+                            if (physical_address < (2 << (OFF_BITS_defined + VPN_BITS_defined)))
                             { // Ensure within allocated memory
                                 physical_memory[physical_address] = value_to_store;
                                 fprintf(output_file, "Current PID: %d. Stored immediate %d into location %s\n",
@@ -599,6 +605,126 @@ int main(int argc, char *argv[])
                 // Output the result
                 fprintf(output_file, "Current PID: %d. Added contents of registers r1 (%d) and r2 (%d). Result: %d\n",
                         current_pid, r1[current_pid] - r2[current_pid], r2[current_pid], r1[current_pid]);
+            }
+            else if (strcmp(tokens[0], "rinspect") == 0) {
+                if (tokens[1] == NULL)
+                {
+                    fprintf(output_file, "Current PID: %d. Error: missing register for rinspect\n", current_pid);
+                }
+                else
+                {
+                    char *reg = tokens[1];
+                    int *value = NULL;
+
+                    // Validate register
+                    if (strcmp(reg, "r1") == 0)
+                    {
+                        value = &r1[current_pid];
+                    }
+                    else if (strcmp(reg, "r2") == 0)
+                    {
+                        value = &r2[current_pid];
+                    }
+                    else
+                    {
+                        fprintf(output_file, "Current PID: %d. Error: invalid register operand %s\n", current_pid, reg);
+                        // Clean up and terminate
+                        for (int i = 0; tokens[i] != NULL; i++)
+                            free(tokens[i]);
+                        free(tokens);
+                        fclose(input_file);
+                        fclose(output_file);
+                        free(physical_memory);
+                        return -1;
+                    }
+
+                    fprintf(output_file, "Current PID: %d. Inspected register %s. Content: %d\n", current_pid, reg, *value);
+                }
+            }
+            else if (strcmp(tokens[0], "pinspect") == 0) {
+                if (tokens[1] == NULL)
+                {
+                    fprintf(output_file, "Current PID: %d. Error: missing VPN for pinspect\n", current_pid);
+                }
+                else
+                {
+                    int VPN = atoi(tokens[1]);
+
+                    // Validate VPN
+                    if (VPN < 0 || VPN >= (1 << VPN_BITS_defined))
+                    {
+                        fprintf(output_file, "Current PID: %d. Error: invalid VPN %d\n", current_pid, VPN);
+                        // Clean up and terminate
+                        for (int i = 0; tokens[i] != NULL; i++)
+                            free(tokens[i]);
+                        free(tokens);
+                        fclose(input_file);
+                        fclose(output_file);
+                        free(physical_memory);
+                        return -1;
+                    }
+
+                    // Output the page table entry
+                    fprintf(output_file, "Current PID: %d. Inspected page table entry %d. Physical frame number: %d. Valid: %d\n",
+                            current_pid, VPN, page_tables[current_pid][VPN].pfn, page_tables[current_pid][VPN].valid);
+                }
+            }
+            else if (strcmp(tokens[0], "linspect") == 0) {
+                if (tokens[1] == NULL)
+                {
+                    fprintf(output_file, "Current PID: %d. Error: missing physical location for linspect\n", current_pid);
+                }
+                else
+                {
+                    int physical_location = atoi(tokens[1]);
+
+                    // Validate physical location
+                    if (physical_location < 0 || physical_location >= (1 << (OFF_BITS_defined + VPN_BITS_defined)))
+                    {
+                        fprintf(output_file, "Current PID: %d. Error: invalid physical location %d\n", current_pid, physical_location);
+                        // Clean up and terminate
+                        for (int i = 0; tokens[i] != NULL; i++)
+                            free(tokens[i]);
+                        free(tokens);
+                        fclose(input_file);
+                        fclose(output_file);
+                        free(physical_memory);
+                        return -1;
+                    }
+
+                    // Output the content of the memory word at the physical location
+                    fprintf(output_file, "Current PID: %d. Inspected physical location %d. Value: %d\n",
+                            current_pid, physical_location, physical_memory[physical_location]);
+                }
+
+            }
+            else if (strcmp(tokens[0], "tinspect") == 0) {
+                if (tokens[1] == NULL)
+                {
+                    fprintf(output_file, "Current PID: %d. Error: missing TLBN for tinspect\n", current_pid);
+                }
+                else
+                {
+                    int TLBN = atoi(tokens[1]);
+
+                    // Validate TLBN
+                    if (TLBN < 0 || TLBN >= 8)
+                    {
+                        fprintf(output_file, "Current PID: %d. Error: invalid TLBN %d\n", current_pid, TLBN);
+                        // Clean up and terminate
+                        for (int i = 0; tokens[i] != NULL; i++)
+                            free(tokens[i]);
+                        free(tokens);
+                        fclose(input_file);
+                        fclose(output_file);
+                        free(physical_memory);
+                        return -1;
+                    }
+
+                    // Output the content of the TLB entry
+                    fprintf(output_file, "Current PID: %d. Inspected TLB entry %d. VPN: %d. PFN: %d. Valid: %d. PID: %d. Timestamp: %d\n",
+                            current_pid, TLBN, tlb[TLBN].vpn, tlb[TLBN].pfn, tlb[TLBN].valid, tlb[TLBN].pid, 0);
+                }
             }
             else
             {
