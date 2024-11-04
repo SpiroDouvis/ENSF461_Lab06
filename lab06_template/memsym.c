@@ -51,6 +51,10 @@ int tlb_next_replace_index = 0;
 int r1[4] = {0};
 int r2[4] = {0};
 
+// Define OFF_BITS_defined and VPN_BITS_defined as global variables
+int OFF_BITS_defined = 4;
+int VPN_BITS_defined = 6;
+
 // Function to tokenize input
 char **tokenize_input(char *input)
 {
@@ -77,13 +81,9 @@ char **tokenize_input(char *input)
 // Helper function to translate virtual address to physical address
 int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_out)
 {
-    // Extract VPN and offset based on define parameters
-    // Assuming OFF_BITS = 4
-    int OFF_BITS_defined = 4;
-    int VPN_BITS_defined = 6;
-
-    int VPN = (address >> OFF_BITS_defined) & 0x3F; // 6 bits for VPN
-    int offset = address & 0xF;                     // 4 bits for offset
+    // Use global OFF_BITS_defined and VPN_BITS_defined
+    int VPN = (address >> OFF_BITS_defined) & ((1 << VPN_BITS_defined) - 1);
+    int offset = address & ((1 << OFF_BITS_defined) - 1);
 
     // TLB Lookup
     for (int i = 0; i < 8; i++)
@@ -216,6 +216,10 @@ int main(int argc, char *argv[])
             int PFN = atoi(tokens[2]);
             int VPN = atoi(tokens[3]);
 
+            // Set global OFF_BITS_defined and VPN_BITS_defined
+            OFF_BITS_defined = OFF;
+            VPN_BITS_defined = VPN;
+
             // Allocate physical memory
             physical_memory = malloc((1 << (OFF + PFN)) * sizeof(uint32_t));
             if (physical_memory == NULL)
@@ -241,7 +245,7 @@ int main(int argc, char *argv[])
             // Initialize page tables
             for (int pid = 0; pid < 4; pid++)
             {
-                for (int vpn = 0; vpn < (1 << VPN); vpn++)
+                for (int vpn = 0; vpn < (1 << VPN_BITS_defined); vpn++)
                 {
                     page_tables[pid][vpn].valid = FALSE;
                 }
@@ -249,8 +253,9 @@ int main(int argc, char *argv[])
 
             define_called = TRUE;
             fprintf(output_file, "Current PID: %d. Memory instantiation complete. OFF bits: %d. PFN bits: %d. VPN bits: %d\n",
-                    current_pid, OFF, PFN, VPN);
+                    current_pid, OFF, PFN, VPN_BITS_defined);
         }
+
         else
         {
             if (!define_called)
@@ -425,7 +430,6 @@ int main(int argc, char *argv[])
                     {
                         // Memory location
                         int address = atoi(src);
-                        int VPN = (address >> 4) & 0x3F; // OFF_BITS = 4
                         int PFN, tlb_index;
                         int hit;
 
@@ -433,9 +437,9 @@ int main(int argc, char *argv[])
                         int translation_success = translate_address(address, &PFN, &tlb_index, &hit);
                         if (translation_success)
                         {
-                            // Calculate physical address
-                            int physical_address = (PFN << 4) | (address & 0xF); // OFF_BITS = 4
-                            if (physical_address < (1 << (4 + 6)))
+                            // Calculate physical address using global OFF_BITS_defined
+                            int physical_address = (PFN << OFF_BITS_defined) | (address & ((1 << OFF_BITS_defined) - 1));
+                            if (physical_address < (1 << (OFF_BITS_defined + VPN_BITS_defined)))
                             { // Ensure within allocated memory
                                 int value = physical_memory[physical_address];
                                 *dst = value;
@@ -458,15 +462,16 @@ int main(int argc, char *argv[])
                         else
                         {
                             // Translation failed
-                            fclose(input_file);
-                            fclose(output_file);
-                            free(physical_memory);
-                            return -1;
+                            // fprintf(output_file, "Current PID: %d. Error: translation failed for address %d\n", current_pid, address);
+                            // fclose(input_file);
+                            // fclose(output_file);
+                            // free(physical_memory);
+                            // return -1;
                         }
                     }
                 }
             }
-            else if (strcmp(tokens[0], "store") == 0)
+                        else if (strcmp(tokens[0], "store") == 0)
             {
                 if (tokens[1] == NULL || tokens[2] == NULL)
                 {
@@ -477,7 +482,7 @@ int main(int argc, char *argv[])
                     char *dst_mem = tokens[1];
                     char *src = tokens[2];
                     int value_to_store = 0;
-
+            
                     if (src[0] == 'r')
                     {
                         // Register source
@@ -501,16 +506,83 @@ int main(int argc, char *argv[])
                             free(physical_memory);
                             return -1;
                         }
-
-                        fprintf(output_file, "Current PID: %d. Stored value of register %s (%d) into location %s\n",
-                                current_pid, src, value_to_store, dst_mem);
+            
+                        // Convert dst_mem to address
+                        int address = atoi(dst_mem);
+                        int PFN, tlb_index;
+                        int hit;
+            
+                        // Translate address
+                        int translation_success = translate_address(address, &PFN, &tlb_index, &hit);
+                        if (translation_success)
+                        {
+                            // Calculate physical address using global OFF_BITS_defined
+                            int physical_address = (PFN << OFF_BITS_defined) | (address & ((1 << OFF_BITS_defined) - 1));
+                            if (physical_address < (1 << (OFF_BITS_defined + VPN_BITS_defined)))
+                            { // Ensure within allocated memory
+                                physical_memory[physical_address] = value_to_store;
+                                fprintf(output_file, "Current PID: %d. Stored value of register %s (%d) into location %s\n",
+                                        current_pid, src, value_to_store, dst_mem);
+                            }
+                            else
+                            {
+                                fprintf(output_file, "Current PID: %d. Error: physical address %d out of bounds\n", current_pid, physical_address);
+                                // Clean up and terminate
+                                for (int i = 0; tokens[i] != NULL; i++)
+                                    free(tokens[i]);
+                                free(tokens);
+                                fclose(input_file);
+                                fclose(output_file);
+                                free(physical_memory);
+                                return -1;
+                            }
+                        }
+                        else
+                        {
+                            fprintf(output_file, "Current PID: %d. Error: translation failed for address %d\n", current_pid, address);
+                            fclose(input_file);
+                            fclose(output_file);
+                            free(physical_memory);
+                            return -1;
+                        }
                     }
                     else if (src[0] == '#')
                     {
                         // Immediate value
                         value_to_store = atoi(src + 1);
-                        fprintf(output_file, "Current PID: %d. Stored immediate %d into location %s\n",
-                                current_pid, value_to_store, dst_mem);
+
+                        
+                        // Implement translation and storage if needed (optional based on requirements)
+                        // If immediate values need to be stored in memory, uncomment the following:
+            
+                        
+                        int address = atoi(dst_mem);
+                        int PFN, tlb_index;
+                        int hit;
+            
+                        // Translate address
+                        int translation_success = translate_address(address, &PFN, &tlb_index, &hit);
+                        if (translation_success)
+                        {
+                            // Calculate physical address using global OFF_BITS_defined
+                            int physical_address = (PFN << OFF_BITS_defined) | (address & ((1 << OFF_BITS_defined) - 1));
+                            if (physical_address < (1 << (OFF_BITS_defined + VPN_BITS_defined)))
+                            { // Ensure within allocated memory
+                                physical_memory[physical_address] = value_to_store;
+                                fprintf(output_file, "Current PID: %d. Stored immediate %d into location %s\n",
+                                        current_pid, value_to_store, dst_mem);
+                            }
+                            else
+                            {
+                                fprintf(output_file, "Current PID: %d. Error: physical address %d out of bounds\n", current_pid, physical_address);
+                                // Clean up and terminate
+                            }
+                        }
+                        else
+                        {
+                            fprintf(output_file, "Current PID: %d. Error: translation failed for address %d\n", current_pid, address);
+                        }
+                        
                     }
                     else
                     {
