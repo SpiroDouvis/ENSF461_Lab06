@@ -26,6 +26,8 @@ typedef struct
     int vpn;
     int pfn;
     int valid;
+
+    uint32_t timestamp;     // ADDED FOR LRU
 } TLBEntry;
 
 // TLB with 8 entries
@@ -95,6 +97,9 @@ int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_ou
             *pfn_out = tlb[i].pfn;
             *tlb_index_out = i;
             *hit_out = TRUE;
+
+            tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+
             fprintf(output_file, "Current PID: %d. Translating. Lookup for VPN %d hit in TLB entry %d. PFN is %d\n",
                     current_pid, VPN, i, tlb[i].pfn);
             return 1; // Success
@@ -114,17 +119,48 @@ int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_ou
 
     *pfn_out = page_tables[current_pid][VPN].pfn;
 
+    // DDED-Update TLB using FIFO or LRU 
+    int replace_index = 0;
+    if (strcmp(strategy, "FIFO")==0)    //if FIFO
+    {
+        replace_index = tlb_next_replace_index;
+        tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
+    }
+    else if (strcmp(strategy, "LRU")==0)    //if LRU
+    {
+        uint32_t min_timestamp = UINT32_MAX;
+        for (int i=0;i<8;i++)
+        {
+            if(!tlb[i].valid)
+            {
+                replace_index=i;
+                break;
+            }
+            if (tlb[i].timestamp<min_timestamp)
+            {
+                min_timestamp=tlb[i].timestamp;
+                replace_index=i;
+            }
+        }
+    }
+
     // Update TLB using FIFO
-    tlb[tlb_next_replace_index].pid = current_pid;
-    tlb[tlb_next_replace_index].vpn = VPN;
-    tlb[tlb_next_replace_index].pfn = *pfn_out;
-    tlb[tlb_next_replace_index].valid = TRUE;
-    int replaced_index = tlb_next_replace_index;
-    tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
+    // tlb[tlb_next_replace_index].pid = current_pid;
+    // tlb[tlb_next_replace_index].vpn = VPN;
+    // tlb[tlb_next_replace_index].pfn = *pfn_out;
+    // tlb[tlb_next_replace_index].valid = TRUE;
+    // int replaced_index = tlb_next_replace_index;
+    // tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
+
+    tlb[replace_index].pid = current_pid;
+    tlb[replace_index].vpn = VPN;
+    tlb[replace_index].pfn = *pfn_out;
+    tlb[replace_index].valid = TRUE;
+    tlb[replace_index].timestamp = timestamp++;
 
     fprintf(output_file, "Current PID: %d. Translating. Successfully mapped VPN %d to PFN %d\n", current_pid, VPN, *pfn_out);
 
-    *tlb_index_out = replaced_index;
+    *tlb_index_out = replace_index;
 
     return 1; // Success
 }
@@ -242,6 +278,8 @@ int main(int argc, char *argv[])
             {
                 tlb[i].valid = FALSE;
                 tlb[i].pfn = 0;
+
+                tlb[i].timestamp = 0; // ADDED FOR LRU-set to 0
             }
             tlb_next_replace_index = 0; // Reset TLB replacement index
 
@@ -326,6 +364,9 @@ int main(int argc, char *argv[])
                         if (tlb[i].valid && tlb[i].pid == current_pid && tlb[i].vpn == VPN)
                         {
                             tlb[i].pfn = PFN;
+
+                            tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+                            
                             found = TRUE;
                             break;
                         }
@@ -342,18 +383,47 @@ int main(int argc, char *argv[])
                                 tlb[i].vpn = VPN;
                                 tlb[i].pfn = PFN;
                                 tlb[i].valid = TRUE;
+
+                                tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+
                                 inserted = TRUE;
                                 break;
                             }
                         }
                         if (!inserted)
                         {
-                            // Replace using FIFO
-                            tlb[tlb_next_replace_index].pid = current_pid;
-                            tlb[tlb_next_replace_index].vpn = VPN;
-                            tlb[tlb_next_replace_index].pfn = PFN;
-                            tlb[tlb_next_replace_index].valid = TRUE;
-                            tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
+                           // ADDED - Replace using FIFO or LRU
+                            int replace_index=0;
+                            if (strcmp(strategy, "FIFO")==0)    // if FIFO
+                            {
+                                replace_index = tlb_next_replace_index;
+                                tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
+                            }
+                            else if (strcmp(strategy, "LRU")==0)    // if LRU
+                            {
+                                uint32_t min_timestamp = UINT32_MAX;
+                                for (int i = 0; i < 8; i++)
+                                {
+                                    if (tlb[i].timestamp < min_timestamp)
+                                    {
+                                        min_timestamp = tlb[i].timestamp;
+                                        replace_index = i;
+                                    }
+                                }
+                            }
+
+                            tlb[replace_index].pid = current_pid;
+                            tlb[replace_index].vpn = VPN;
+                            tlb[replace_index].pfn = PFN;
+                            tlb[replace_index].valid = TRUE;
+                            tlb[replace_index].timestamp = timestamp++; // for LRU
+
+                            // // Replace using FIFO
+                            // tlb[tlb_next_replace_index].pid = current_pid;
+                            // tlb[tlb_next_replace_index].vpn = VPN;
+                            // tlb[tlb_next_replace_index].pfn = PFN;
+                            // tlb[tlb_next_replace_index].valid = TRUE;
+                            // tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
                         }
                     }
 
