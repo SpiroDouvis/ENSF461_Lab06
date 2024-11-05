@@ -157,7 +157,6 @@ int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_ou
     tlb[replace_index].vpn = VPN;
     tlb[replace_index].pfn = *pfn_out;
     tlb[replace_index].valid = TRUE;
-    // tlb[replace_index].timestamp = timestamp++;
 
     fprintf(output_file, "Current PID: %d. Translating. Successfully mapped VPN %d to PFN %d\n", current_pid, VPN, *pfn_out);
 
@@ -367,7 +366,6 @@ int main(int argc, char *argv[])
                         {
                             tlb[i].pfn = PFN;
 
-                            // tlb[i].timestamp = timestamp++; 
                             tlb[i].timestamp = timestamp; 
                             
                             found = TRUE;
@@ -387,8 +385,7 @@ int main(int argc, char *argv[])
                                 tlb[i].pfn = PFN;
                                 tlb[i].valid = TRUE;
 
-                                // tlb[i].timestamp = timestamp++; // ADDED FOR LRU
-                                tlb[i].timestamp = timestamp; // ADDED FOR LRU
+                                tlb[i].timestamp = timestamp; 
 
                                 inserted = TRUE;
                                 break;
@@ -420,15 +417,7 @@ int main(int argc, char *argv[])
                             tlb[replace_index].vpn = VPN;
                             tlb[replace_index].pfn = PFN;
                             tlb[replace_index].valid = TRUE;
-                            // tlb[replace_index].timestamp = timestamp; // for LRU
-                            tlb[replace_index].timestamp = timestamp++; // for LRU
-
-                            // // Replace using FIFO
-                            // tlb[tlb_next_replace_index].pid = current_pid;
-                            // tlb[tlb_next_replace_index].vpn = VPN;
-                            // tlb[tlb_next_replace_index].pfn = PFN;
-                            // tlb[tlb_next_replace_index].valid = TRUE;
-                            // tlb_next_replace_index = (tlb_next_replace_index + 1) % 8;
+                            tlb[replace_index].timestamp = timestamp; // for LRU
                         }
                     }
 
