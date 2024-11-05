@@ -57,7 +57,7 @@ int r2[4] = {0};
 int OFF_BITS_defined = 4;
 int VPN_BITS_defined = 6;
 
-int timestamp = 0;
+uint32_t timestamp;
 
 // Function to tokenize input
 char **tokenize_input(char *input)
@@ -98,7 +98,8 @@ int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_ou
             *tlb_index_out = i;
             *hit_out = TRUE;
 
-            tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+            if (strcmp(strategy, "LRU")==0)
+                tlb[i].timestamp = timestamp; 
 
             fprintf(output_file, "Current PID: %d. Translating. Lookup for VPN %d hit in TLB entry %d. PFN is %d\n",
                     current_pid, VPN, i, tlb[i].pfn);
@@ -156,7 +157,7 @@ int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_ou
     tlb[replace_index].vpn = VPN;
     tlb[replace_index].pfn = *pfn_out;
     tlb[replace_index].valid = TRUE;
-    tlb[replace_index].timestamp = timestamp++;
+    // tlb[replace_index].timestamp = timestamp++;
 
     fprintf(output_file, "Current PID: %d. Translating. Successfully mapped VPN %d to PFN %d\n", current_pid, VPN, *pfn_out);
 
@@ -167,6 +168,8 @@ int translate_address(int address, int *pfn_out, int *tlb_index_out, int *hit_ou
 
 int main(int argc, char *argv[])
 {
+    timestamp = 0;
+
     const char usage[] = "Usage: memsym.out <strategy> <input trace> <output trace>\n";
     char *input_trace;
     char *output_trace;
@@ -229,7 +232,7 @@ int main(int argc, char *argv[])
             free(tokens);
             continue;
         }
-
+        timestamp++;
         if (strcmp(tokens[0], "define") == 0)
         {
             if (define_called)
@@ -279,7 +282,6 @@ int main(int argc, char *argv[])
                 tlb[i].valid = FALSE;
                 tlb[i].pfn = 0;
 
-                tlb[i].timestamp = 0; // ADDED FOR LRU-set to 0
             }
             tlb_next_replace_index = 0; // Reset TLB replacement index
 
@@ -365,7 +367,8 @@ int main(int argc, char *argv[])
                         {
                             tlb[i].pfn = PFN;
 
-                            tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+                            // tlb[i].timestamp = timestamp++; 
+                            tlb[i].timestamp = timestamp; 
                             
                             found = TRUE;
                             break;
@@ -384,7 +387,8 @@ int main(int argc, char *argv[])
                                 tlb[i].pfn = PFN;
                                 tlb[i].valid = TRUE;
 
-                                tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+                                // tlb[i].timestamp = timestamp++; // ADDED FOR LRU
+                                tlb[i].timestamp = timestamp; // ADDED FOR LRU
 
                                 inserted = TRUE;
                                 break;
@@ -416,6 +420,7 @@ int main(int argc, char *argv[])
                             tlb[replace_index].vpn = VPN;
                             tlb[replace_index].pfn = PFN;
                             tlb[replace_index].valid = TRUE;
+                            // tlb[replace_index].timestamp = timestamp; // for LRU
                             tlb[replace_index].timestamp = timestamp++; // for LRU
 
                             // // Replace using FIFO
@@ -644,6 +649,7 @@ int main(int argc, char *argv[])
                             int physical_address = (PFN << OFF_BITS_defined) | (address & ((1 << OFF_BITS_defined) - 1));
                             if (physical_address < (2 << (OFF_BITS_defined + VPN_BITS_defined)))
                             { // Ensure within allocated memory
+                                // tlb[tlb_index].timestamp = timestamp;
                                 physical_memory[physical_address] = value_to_store;
                                 fprintf(output_file, "Current PID: %d. Stored immediate %d into location %s\n",
                                         current_pid, value_to_store, dst_mem);
@@ -793,7 +799,7 @@ int main(int argc, char *argv[])
 
                     // Output the content of the TLB entry
                     fprintf(output_file, "Current PID: %d. Inspected TLB entry %d. VPN: %d. PFN: %d. Valid: %d. PID: %d. Timestamp: %d\n",
-                            current_pid, TLBN, tlb[TLBN].vpn, tlb[TLBN].pfn, tlb[TLBN].valid, tlb[TLBN].pid, 0);
+                            current_pid, TLBN, tlb[TLBN].vpn, tlb[TLBN].pfn, tlb[TLBN].valid, tlb[TLBN].pid, tlb[TLBN].timestamp);
                 }
             }
             else
